@@ -1,0 +1,1 @@
+-Z -Dcpp.sym -N -C -Mcpp.map -Ptext=0,data,bss -C100H -Ocpp.COM crtcpm.obj cpp_new.obj cpy.obj vprintf.obj libc.lib

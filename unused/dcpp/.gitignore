@@ -1,0 +1,9 @@
+# Build artifacts in this experimental/unused dcpp variant
+*.obj
+*.com
+*.map
+*.sym
+*.sym.sorted
+*.xym
+ctmp.[0-9]
+.619

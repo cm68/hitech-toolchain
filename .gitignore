@@ -1,0 +1,16 @@
+# Umbrella-level gitignore. Per-pass dirs (cc/, cpp/, …) each have their
+# own .gitignore that excludes build artifacts in that subtree. lib/
+# intentionally tracks upstream .com/.obj/.lib binaries (the HI-TECH
+# library shipped with the original distribution), so do NOT add broad
+# *.com / *.obj patterns here.
+
+# zc3 driver intermediate temps (cc-XXXXXX.{1,2,3})
+cc-??????.[123]
+
+# Preserved upstream per-pass git metadata (see README "Preserved
+# upstream history")
+**/.git.upstream/
+
+# host editor / OS artifacts
+*.swp
+.DS_Store

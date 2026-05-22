@@ -1,0 +1,15 @@
+# CP/M build artifacts
+*.obj
+*.com
+*.cpm
+*.map
+*.sym
+*.sym.sorted
+*.xym
+*.in
+
+# Linux-native binaries
+x.*
+p1x3
+p1x3.O0
+p1x3.dbg

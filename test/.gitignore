@@ -1,0 +1,6 @@
+# Test build artifacts
+*.obj
+*.com
+*.sym
+*.map
+xx

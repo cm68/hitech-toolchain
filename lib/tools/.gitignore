@@ -1,0 +1,15 @@
+# Build artifacts from compiling hello.c and friends
+hello.com
+hello.obj
+hello.cpp
+hello.sym
+hello.cim
+helloo.obj
+ctmp1
+ctmp2
+ctmp3
+ctmp4
+crtcpm.obj
+
+# Native objdump test binary
+objdump

@@ -1,0 +1,12 @@
+# CP/M build artifacts
+*.obj
+*.com
+*.map
+*.sym
+*.sym.sorted
+*.xym
+*.in
+
+# Linux-native binaries
+x.*
+cpp_new3

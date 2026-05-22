@@ -664,7 +664,7 @@ void fixup(int offset, uint16_t relocType, uint32_t delta) {
     case 2:
         nval  = delta + (long)conv_letoi16(fixloc);
         nmask = 0xffff;
-        conv_u16tob((uint8_t)nval, fixloc);
+        conv_u16tob((uint16_t)nval, fixloc);
         break;
     case 3:
         nval = delta + conv_btou24(fixloc);

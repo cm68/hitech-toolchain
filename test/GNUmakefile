@@ -16,7 +16,10 @@ ZC   = zc3
 
 LFLAGS = -Z -Ptext=0,data,bss -C100H
 
-TESTS = ahello
+# Library/include search root for the zc3 driver.
+HITECH_LIB ?= /vault/src/hitech/lib
+
+TESTS = ahello hello
 
 all:	$(addsuffix .com,$(TESTS))
 
@@ -24,10 +27,13 @@ ahello.com: ahello.as
 	$(ZAS) -n -o$(@:.com=.obj) $<
 	$(LINK) $(LFLAGS) -O$@ $(@:.com=.obj)
 
+hello.com: hello.c
+	LIBDIR80=$(HITECH_LIB) INCDIR80=$(HITECH_LIB) $(ZC) -CPM -E$@ $<
+
 # `make test` builds each test, runs it under the emulator, and greps
 # the captured output for the expected substring. Each test_NAME rule
 # corresponds to a TESTS entry.
-test: test_ahello
+test: test_ahello test_hello
 
 test_ahello: ahello.com
 	@out=$$( $(CPM_EMU) --exec ahello < /dev/null 2>&1 ); \
@@ -35,6 +41,18 @@ test_ahello: ahello.com
 		echo "PASS  test_ahello"; \
 	else \
 		echo "FAIL  test_ahello"; \
+		echo "------ captured ------"; \
+		echo "$$out"; \
+		echo "----------------------"; \
+		exit 1; \
+	fi
+
+test_hello: hello.com
+	@out=$$( $(CPM_EMU) --exec hello < /dev/null 2>&1 ); \
+	if echo "$$out" | grep -q 'hello world'; then \
+		echo "PASS  test_hello"; \
+	else \
+		echo "FAIL  test_hello"; \
 		echo "------ captured ------"; \
 		echo "$$out"; \
 		echo "----------------------"; \

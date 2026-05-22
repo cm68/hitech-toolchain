@@ -108,6 +108,19 @@ The library files ship in upper-case (`LIBC.LIB`, `CRTCPM.OBJ`,
 `LIBF.LIB`) — the linker looks for lower-case names, so the `lib/`
 directory carries lower-case symlinks alongside the upper-case files.
 
+### End-to-end test
+
+`make test` assembles `test/ahello.as`, links it into a CP/M `.com`,
+runs it under a CP/M emulator, and checks that the expected output
+appears on stdout. Point `CPM_EMU` at your emulator:
+
+    make test CPM_EMU=/path/to/cpm
+
+Default is `cpm` on PATH (matching the binary built by
+<https://github.com/jhallen/cpm>). The asm test bypasses the HI-TECH
+C runtime entirely (direct BDOS 9 call), so it isolates toolchain
+correctness from libc/runtime issues.
+
 ### Compile a hello-world for CP/M
 
     cat > hello.c <<'EOF'

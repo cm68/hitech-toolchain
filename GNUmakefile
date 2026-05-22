@@ -39,3 +39,10 @@ install: all
 		echo "==> install $$i"; \
 		( cd $$i && $(MAKE) install ) || exit $$?; \
 	done
+
+# End-to-end test: assemble a hello.com via zasx3+linq3, run it under
+# a CP/M emulator (CPM_EMU env, defaults to `cpm`), check output.
+# Requires the toolchain to be installed (so zasx3/linq3 are on PATH).
+.PHONY: all clean clobber install test
+test:
+	@cd test && $(MAKE) test CPM_EMU="$(CPM_EMU)"

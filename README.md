@@ -59,26 +59,28 @@ free for any use, private or commercial, strictly as-is. See each
 pass's `LICENSE` for the upstream notice; the reconstruction work
 inherits the same terms.
 
-## Preserved upstream history (`.git.upstream/`)
+## Where development happens
 
-Each pass directory keeps a renamed `.git.upstream/` folder that holds
-the original per-pass repo's commits and `origin` remote. The umbrella
-git tree does not see these (the name avoids git's nested-repo
-detection), but they remain functional repositories: cd into a pass
-dir and run
+This repository is the single upstream for the toolchain. The
+per-pass `nikitinprior/*` repos in the table above are the *origin*
+of the reconstructed C sources but are not actively tracked here —
+they're listed for attribution and for anyone who wants to compare
+back to a single-pass snapshot.
+
+If you make a fix that belongs in one of those upstreams (e.g. the
+`getCh()` CRLF-handling fix in `p1/lex.c`, or the 16-bit reloc
+truncation fix in `link/c.c`), you can copy the change over by hand
+to a fresh clone of that upstream and open a PR — but the canonical
+copy lives here.
+
+For convenience, each pass dir still carries a renamed
+`.git.upstream/` folder holding the original per-pass repo metadata.
+You can re-engage one as a working git repository with
 
     mv .git.upstream .git
-    git fetch origin
-    git log --oneline
 
-…to re-engage with the upstream and contribute fixes back. Fixes made
-in this tree that belong upstream (for example the
-`getCh()` CRLF handling fix in `p1/lex.c`) should be cherry-picked
-into the corresponding `.git.upstream` repo and pushed there.
-
-This is a deliberate, reversible choice — not git submodules. We want
-one repository that holds the whole working toolchain, while keeping
-the door open to send fixes upstream.
+…which is useful for browsing per-pass history or producing an
+upstream-shaped patch. It is not part of the build workflow.
 
 ## Building
 

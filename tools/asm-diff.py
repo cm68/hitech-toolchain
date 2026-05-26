@@ -126,31 +126,248 @@ def function_ranges(syms: list[Symbol]) -> dict[str, tuple[int, int]]:
 
 # ---- main analysis ------------------------------------------------------
 
-def collect_anchors(ours_blob: bytes, name: str,
-                    start: int, end: int,
-                    ours_strings: dict[int, bytes]) -> list[bytes]:
-    """Return string literals referenced from within [start,end) of ours."""
+@dataclass
+class Anchor:
+    """A `LD HL,imm16` reference to a string literal, with its location
+    inside the containing function."""
+    string: bytes
+    offset_in_func: int     # bytes from start of function to this LD HL
+
+
+def collect_anchors(ours_blob: bytes, start: int, end: int,
+                    ours_strings: dict[int, bytes]) -> list[Anchor]:
+    """Return all `LD HL,strlit` anchors inside [start, end)."""
     body = ours_blob[start - 0x100:end - 0x100]
-    anchors: list[bytes] = []
-    # Scan for `21 lo hi` LD HL,imm16 instructions
+    out: list[Anchor] = []
     for j in range(len(body) - 2):
         if body[j] != 0x21:
             continue
         target = body[j + 1] | (body[j + 2] << 8)
         if target in ours_strings:
-            anchors.append(ours_strings[target])
-    return anchors
+            out.append(Anchor(string=ours_strings[target], offset_in_func=j))
+    return out
 
 
-def locate_in_orig(orig_blob: bytes, orig_strings: dict[int, bytes],
-                   anchors: list[bytes]) -> list[int]:
-    """For each anchor string present in orig, return refs to it."""
-    rev_strings = {s: addr for addr, s in orig_strings.items()}
-    refs: list[int] = []
+@dataclass
+class CallAnchor:
+    """A `CALL imm16` reference to a known function, with its location
+    inside the containing function."""
+    callee_our_addr: int    # address in our build
+    callee_orig_addr: int   # address of same function in orig (resolved)
+    offset_in_func: int     # bytes from start of function to this CALL
+
+
+def collect_call_anchors(ours_blob: bytes, start: int, end: int,
+                         func_map: dict[int, int]) -> list[CallAnchor]:
+    """Return `CALL imm16` instructions where imm16 names a function
+    whose orig address we already know (via func_map: our_addr → orig_addr)."""
+    body = ours_blob[start - 0x100:end - 0x100]
+    out: list[CallAnchor] = []
+    for j in range(len(body) - 2):
+        if body[j] != 0xcd:                  # CALL imm16
+            continue
+        target = body[j + 1] | (body[j + 2] << 8)
+        if target in func_map:
+            out.append(CallAnchor(
+                callee_our_addr=target,
+                callee_orig_addr=func_map[target],
+                offset_in_func=j,
+            ))
+    return out
+
+
+# Opcodes whose immediately-following 2 bytes are absolute 16-bit
+# addresses (which differ between builds). When fingerprinting a
+# function for byte-level matching, mask out those operand bytes so a
+# function that only differs in linker-resolved targets still matches.
+WILD_OPCODES_3B = {
+    0xc3,  # JP imm16
+    0xc2, 0xca, 0xd2, 0xda, 0xe2, 0xea, 0xf2, 0xfa,  # JP cc, imm16
+    0xcd,  # CALL imm16
+    0xc4, 0xcc, 0xd4, 0xdc, 0xe4, 0xec, 0xf4, 0xfc,  # CALL cc, imm16
+    0x21,  # LD HL, imm16
+    0x01,  # LD BC, imm16
+    0x11,  # LD DE, imm16
+    0x31,  # LD SP, imm16
+    0x22,  # LD (imm16), HL
+    0x2a,  # LD HL, (imm16)
+    0x32,  # LD (imm16), A
+    0x3a,  # LD A, (imm16)
+}
+
+
+def mask_blob_inplace(blob: bytes, start_off: int = 0) -> bytes:
+    """Walk blob from `start_off`, decode instruction widths well
+    enough to identify imm16 operand positions, and return a copy with
+    those operand bytes zeroed. Two function bodies with the same
+    opcodes but different linker-resolved targets give identical masked
+    bytes for the same starting offset."""
+    out = bytearray(blob)
+    i = start_off
+    while i < len(out):
+        op = out[i]
+        if op == 0xed and i + 1 < len(out):
+            sub = out[i + 1]
+            if sub in (0x43, 0x53, 0x63, 0x73, 0x4b, 0x5b, 0x6b, 0x7b):
+                if i + 4 <= len(out):
+                    out[i + 2] = 0
+                    out[i + 3] = 0
+                i += 4
+                continue
+            i += 2
+            continue
+        if op in (0xdd, 0xfd):
+            # IX/IY prefix; treat subsequent byte normally
+            i += 1
+            continue
+        if op == 0xcb:
+            i += 2
+            continue
+        if op in WILD_OPCODES_3B and i + 3 <= len(out):
+            out[i + 1] = 0
+            out[i + 2] = 0
+            i += 3
+            continue
+        i += 1
+    return bytes(out)
+
+
+def find_by_fingerprint(masked_orig: bytes,
+                        masked_ours_func: bytes
+                       ) -> list[int]:
+    """Find all positions in masked_orig where masked_ours_func appears.
+    Returns memory addresses (file offset + 0x100)."""
+    matches: list[int] = []
+    i = 0
+    while True:
+        j = masked_orig.find(masked_ours_func, i)
+        if j < 0:
+            break
+        matches.append(cpm_load_addr(j))
+        i = j + 1
+    return matches
+
+
+def locate_function_by_calls(orig_blob: bytes,
+                             call_anchors: list[CallAnchor],
+                             tolerance: int = 16
+                            ) -> tuple[str, int | None, int]:
+    """Same as locate_function_in_orig but uses CALL targets (known
+    orig addresses of other anchored functions) instead of string
+    refs. Each CallAnchor names where in ours the CALL is and what
+    orig address it points to."""
+    # For each call anchor, find all `cd lo hi` in orig with that target
+    anchor_refs: list[list[tuple[int, int]]] = []
+    for c in call_anchors:
+        lo = c.callee_orig_addr & 0xff
+        hi = (c.callee_orig_addr >> 8) & 0xff
+        needle = bytes([0xcd, lo, hi])
+        sites = []
+        i = 0
+        while True:
+            j = orig_blob.find(needle, i)
+            if j < 0:
+                break
+            sites.append(cpm_load_addr(j))
+            i = j + 1
+        anchor_refs.append([(c.offset_in_func, s) for s in sites])
+
+    if all(not refs for refs in anchor_refs):
+        return ('no-call-match', None, 0)
+
+    from collections import Counter
+    votes: Counter[int] = Counter()
+
+    # Pairwise voting on candidate function-starts (same logic as
+    # string anchoring, but each pair must agree on relative offset).
+    for i in range(len(call_anchors)):
+        for j in range(i + 1, len(call_anchors)):
+            ai, aj = call_anchors[i], call_anchors[j]
+            expected = aj.offset_in_func - ai.offset_in_func
+            for off_i, ref_i in anchor_refs[i]:
+                for off_j, ref_j in anchor_refs[j]:
+                    if abs((ref_j - ref_i) - expected) <= tolerance:
+                        cand = ref_i - ai.offset_in_func
+                        votes[cand] += 2
+
+    # Need pairwise confirmation — single-call anchoring is too noisy
+    # (the same orig function is typically called from many places).
+    if not votes:
+        return ('no-call-match', None, 0)
+
+    top = votes.most_common(2)
+    if len(top) > 1 and top[0][1] == top[1][1]:
+        return ('ambig', None, top[0][1])
+    return ('found', top[0][0], top[0][1])
+
+
+def locate_function_in_orig(orig_blob: bytes,
+                            orig_strings: dict[int, bytes],
+                            anchors: list[Anchor],
+                            tolerance: int = 16
+                           ) -> tuple[str, int | None, int]:
+    """Find the most likely function start address in `orig` matching
+    a function in `ours` characterised by the given anchors.
+
+    Strategy: each anchor names a string `S` and the offset within the
+    function where `LD HL,&S` appears. In the original, find all
+    addresses where `LD HL,&S_in_orig` appears. For every pair of
+    anchors (a, b) and every pair of orig refs (a_ref, b_ref), if
+    b_ref - a_ref ≈ b.offset - a.offset (within ±tolerance), then
+    a candidate function-start = a_ref - a.offset_in_func. Vote.
+    The candidate with most votes wins; one anchor with one orig
+    ref still works (single-anchor fallback).
+
+    Returns (status, addr, vote_count) where status is one of:
+        'found'        - addr is the inferred orig function start
+        'string-not-in-orig'  - no anchors map to orig strings
+        'ambig'        - multiple candidates tied
+    """
+    rev = {s: addr for addr, s in orig_strings.items()}
+
+    # For each anchor: list of (offset_in_ours_func, orig_ref_addr)
+    anchor_refs: list[list[tuple[int, int]]] = []
     for a in anchors:
-        if a in rev_strings:
-            refs.extend(find_imm16_refs(orig_blob, rev_strings[a]))
-    return sorted(set(refs))
+        if a.string not in rev:
+            anchor_refs.append([])
+            continue
+        sites = find_imm16_refs(orig_blob, rev[a.string])
+        anchor_refs.append([(a.offset_in_func, s) for s in sites])
+
+    if all(not refs for refs in anchor_refs):
+        return ('string-not-in-orig', None, 0)
+
+    # Vote on each candidate function-start. A vote = a confirmed pair
+    # of anchors at the right relative distance, OR a singleton anchor
+    # whose ref position implies a start.
+    from collections import Counter
+    votes: Counter[int] = Counter()
+
+    # Pairwise voting (preferred)
+    for i in range(len(anchors)):
+        for j in range(i + 1, len(anchors)):
+            ai, aj = anchors[i], anchors[j]
+            expected = aj.offset_in_func - ai.offset_in_func
+            for off_i, ref_i in anchor_refs[i]:
+                for off_j, ref_j in anchor_refs[j]:
+                    if abs((ref_j - ref_i) - expected) <= tolerance:
+                        cand = ref_i - ai.offset_in_func
+                        votes[cand] += 2  # 2 anchors confirming
+
+    # Single-anchor fallback (each ref contributes one vote)
+    if not votes:
+        for i, a in enumerate(anchors):
+            for off, ref in anchor_refs[i]:
+                cand = ref - a.offset_in_func
+                votes[cand] += 1
+
+    if not votes:
+        return ('string-not-in-orig', None, 0)
+
+    top = votes.most_common(2)
+    if len(top) > 1 and top[0][1] == top[1][1]:
+        return ('ambig', None, top[0][1])
+    return ('found', top[0][0], top[0][1])
 
 
 def find_cret(blob: bytes) -> int:
@@ -236,45 +453,111 @@ def main():
     if args.limit:
         names = names[:args.limit]
 
-    # Header
-    print(f"{'function':<28} {'ours':>6} {'orig':>6} {'delta':>7} {'note'}")
-    print("-" * 70)
+    # Two-pass alignment.
+    # Pass 1: string-anchor each function. Functions sized.
+    # Pass 2: for unanchored functions, anchor by CALLs to functions
+    #         resolved in pass 1. Iterate until quiescent.
+    results: dict[str, tuple[int, int | None, int, str]] = {}
+    # name → (ours_size, orig_size_or_None, orig_start_or_-1, status_tag)
+    func_map: dict[int, int] = {}  # our_addr → orig_addr (resolved)
 
+    def record(name: str, ours_size: int, orig_start: int, ours_addr: int,
+               method: str):
+        orig_end_addr = function_extent_from_ref(
+            orig_blob, orig_start + 0, orig_cret)[1]
+        # Re-do extent from a known-internal ref - use first anchor ref
+        # if we have it; else assume orig_start is the function start
+        # and forward-walk for end.
+        # Walker already keys off the ref site inside the func; reuse
+        # locate logic by treating orig_start itself as the start and
+        # forward-walking for the end.
+        forward_end = len(orig_blob)
+        for k in range(orig_start - 0x100, len(orig_blob)):
+            sz = is_function_exit(orig_blob, k, orig_cret)
+            if sz is not None:
+                forward_end = k + sz
+                break
+        orig_end_addr = cpm_load_addr(forward_end)
+        orig_size = orig_end_addr - orig_start
+        if orig_size > 2 * ours_size or ours_size > 2 * orig_size:
+            results[name] = (ours_size, None, orig_start, f'walker-unsure[{method}]')
+        else:
+            results[name] = (ours_size, orig_size, orig_start, method)
+            func_map[ours_addr] = orig_start
+
+    # ---- pass 1: string anchors --------------------------------
+    pending: list[str] = []
     for name in names:
         if name not in ranges:
             continue
         start, end = ranges[name]
         ours_size = end - start
-        anchors = collect_anchors(ours_blob, name, start, end, ours_strings)
+        anchors = collect_anchors(ours_blob, start, end, ours_strings)
         if not anchors:
-            print(f"{name:<28} {ours_size:>6} {'?':>6} {'':>7} no-anchor")
+            pending.append(name)
+            results[name] = (ours_size, None, -1, 'no-anchor')
             continue
+        status, hint, votes = locate_function_in_orig(
+            orig_blob, orig_strings, anchors)
+        if status == 'found':
+            record(name, ours_size, hint, start, 'str')
+        elif status == 'ambig':
+            pending.append(name)
+            results[name] = (ours_size, None, -1, f'str-ambig({votes}v)')
+        else:
+            pending.append(name)
+            results[name] = (ours_size, None, -1, 'no-string-match')
 
-        refs = locate_in_orig(orig_blob, orig_strings, anchors)
-        if not refs:
-            print(f"{name:<28} {ours_size:>6} {'?':>6} {'':>7} string-not-in-orig")
-            continue
-        if len(refs) > 1:
-            # Ambiguous — multiple sites reference the same string
-            print(f"{name:<28} {ours_size:>6} {'?':>6} {'':>7} {len(refs)}-refs-ambig")
-            continue
+    # ---- pass 2: byte-fingerprint match (libc and other byte-perfect funcs)
+    # Walks the orig blob once with imm16 operands masked, then for
+    # each remaining unanchored function in ours, fingerprints its
+    # body the same way and checks bytes.find() for a unique location.
+    masked_orig = mask_blob_inplace(orig_blob)
+    for name in list(pending):
+        start, end = ranges[name]
+        ours_size = end - start
+        masked_ours = mask_blob_inplace(
+            ours_blob[start - 0x100:end - 0x100])
+        if len(masked_ours) < 12:
+            continue                       # too short, unreliable
+        hits = find_by_fingerprint(masked_orig, masked_ours)
+        if len(hits) == 1:
+            record(name, ours_size, hits[0], start, 'fp')
+            pending.remove(name)
+        elif len(hits) > 1:
+            results[name] = (ours_size, None, -1, f'fp-ambig({len(hits)})')
 
-        ref = refs[0]
-        orig_start, orig_end = function_extent_from_ref(orig_blob, ref, orig_cret)
-        orig_size = orig_end - orig_start
-        # If the walker disagrees with ours_size by more than 2x in
-        # either direction it's almost certainly stopped at an early
-        # RET inside our function (HI-TECH compiles some control
-        # flows that way). Don't pretend to know the real orig size.
-        if orig_size and (orig_size > 2 * ours_size or
-                          ours_size > 2 * orig_size):
-            print(f"{name:<28} {ours_size:>6} {'?':>6} {'':>7} "
-                  f"walker-unsure orig~=0x{orig_start:04x}")
+    # ---- pass 3+: call-target anchors, iterated until stable ----
+    for iteration in range(3):
+        progress = 0
+        for name in list(pending):
+            start, end = ranges[name]
+            ours_size = end - start
+            calls = collect_call_anchors(ours_blob, start, end, func_map)
+            if len(calls) < 2:
+                continue
+            status, hint, votes = locate_function_by_calls(orig_blob, calls)
+            if status == 'found':
+                record(name, ours_size, hint, start, f'call[r{iteration+1}]')
+                pending.remove(name)
+                progress += 1
+        if not progress:
+            break
+
+    # ---- emit report --------------------------------------------
+    print(f"{'function':<28} {'ours':>6} {'orig':>6} {'delta':>9} {'note'}")
+    print("-" * 80)
+    for name in names:
+        if name not in results:
             continue
-        delta = ours_size - orig_size
-        pct = f"{100*delta/orig_size:+.1f}%" if orig_size else "?"
-        print(f"{name:<28} {ours_size:>6} {orig_size:>6} {pct:>7} "
-              f"orig=0x{orig_start:04x}")
+        ours_size, orig_size, orig_start, method = results[name]
+        if orig_size is None:
+            print(f"{name:<28} {ours_size:>6} {'?':>6} {'':>9} {method}")
+        else:
+            delta = ours_size - orig_size
+            pct = f"{100*delta/orig_size:+.1f}%" if orig_size else "?"
+            print(f"{name:<28} {ours_size:>6} {orig_size:>6} {pct:>9} "
+                  f"orig=0x{orig_start:04x} via-{method}")
 
 
 if __name__ == "__main__":

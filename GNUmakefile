@@ -43,7 +43,13 @@ install: all
 # End-to-end test: assemble a hello.com via zasx3+linq3, run it under
 # a CP/M emulator (CPM_EMU env, defaults to `cpm`), check output.
 # Requires the toolchain to be installed (so zasx3/linq3 are on PATH).
-.PHONY: all clean clobber install test stage1
+.PHONY: all clean clobber install test stage1 diff-cgen
+
+# diff-cgen: compare our stage-1 cgen.com against the upstream CGEN.COM
+# function by function, surfacing where the reconstructed C source
+# bloats vs the original. See tools/asm-diff.py for the heuristics.
+diff-cgen: stage1
+	@cd cgen/native && $(MAKE) diff
 test:
 	@cd test && $(MAKE) test CPM_EMU="$(CPM_EMU)"
 

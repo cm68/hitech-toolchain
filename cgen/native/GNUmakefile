@@ -53,7 +53,16 @@ unpack: ../cgen.c ../cgen.h unpack.pl
 	zasx3 -j -n -o$@ $<
 
 $(TARGET): $(OBJ)
-	linq3 $(LFLAGS) -O$@ $(CRT) $(OBJ) $(LIBC)
+	linq3 $(LFLAGS) -Dcgen.sym -Mcgen.map -O$@ $(CRT) $(OBJ) $(LIBC)
+
+# diff: side-by-side report of our cgen.com vs the original CGEN.COM.
+# Anchored functions show byte-for-byte size deltas; unanchored ones
+# print '?'. Use this to find which reconstructed C functions are
+# bloating relative to the original HI-TECH binary.
+ORIG_CGEN ?= $(HITECH_LIB)/CGEN.COM
+ASM_DIFF  ?= ../../tools/asm-diff.py
+diff: $(TARGET) cgen.sym
+	$(ASM_DIFF) $(TARGET) cgen.sym $(ORIG_CGEN)
 
 $(AS): cgen.h
 

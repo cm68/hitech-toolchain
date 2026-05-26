@@ -97,10 +97,9 @@ ulong calc_long P((uchar * p1)); /*  ok   works good	*/
  * similar ones with a variable number of parameters
  */
 
-#if CPM
-int strlen();
-int fread();
-#endif
+/* HI-TECH C v3.09 picks up strlen()/fread() from <string.h>/<stdio.h>
+   declared above; the K&R-style int-returning re-declarations that
+   were here before conflict with those prototypes. */
 
 /*
  *	Structural declarations

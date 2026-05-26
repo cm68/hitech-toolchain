@@ -626,9 +626,14 @@ void addobj(char * s) {
 //**********************************************************************
 void addlib(char * s) {
     char * cp;
+    char * t;
 
     strcpy(tmpbuf, libpath);
     strcat(strcat(tmpbuf, s), LIBSUFF);
+    /* Normalize to lowercase so e.g. `-LF` finds libf.lib on a
+       case-sensitive host filesystem. */
+    for (t = tmpbuf + strlen(libpath); *t; t++)
+        if (*t >= 'A' && *t <= 'Z') *t += 'a' - 'A';
     cp = xalloc((int)strlen(tmpbuf) + 1);
     strcpy(cp, tmpbuf);
     libs[lib_idx++] = cp;

@@ -69,7 +69,16 @@ zfloat zatof(char *s);
 
 #define MAX_OPERATORS 331
 #define MAX_PSECT     17
+/* The original CP/M-era assembler kept MAX_TMP at 350 to fit the
+   table in 64KB. The Linux-native zasx3 has no such constraint and
+   needs a much higher cap to assemble the reconstructed sources
+   (cgen.c, optim.c produce thousands of temp labels). The CP/M
+   build path keeps the original limit. */
+#ifdef CPM
 #define MAX_TMP       350
+#else
+#define MAX_TMP       65535
+#endif
 /*
  *	Linker Limitations
  */

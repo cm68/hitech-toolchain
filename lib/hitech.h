@@ -14,6 +14,9 @@
 
 #if	HI_TECH_C
 #define	ANSI	1
+/* HI-TECH C v3.09 doesn't know the `inline` keyword. The reconstructed
+   sources use it as an optimisation hint; strip it out. */
+#define	inline
 #endif	HI_TECH_C
 
 /*	shorthand types */

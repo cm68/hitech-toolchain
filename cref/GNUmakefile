@@ -17,14 +17,14 @@ x.cref:	cref.c
 cref3:	cref.c
 	gcc -O3 $(LEGACY) -ocref3 cref.c
 
-cref.com:	cref.c
-	zxc cref.c
-
-cref: cref.c
-	x.cc -o cref cref.c
-
 PREFIX ?= /usr/local
 BINDIR  = $(PREFIX)/bin
+
+# stage 1: use the installed Linux-native zc3 to produce the CP/M .com
+HITECH_LIB ?= /vault/src/hitech/lib
+stage1: cref.com
+cref.com: cref.c
+	LIBDIR80=$(HITECH_LIB) INCDIR80=$(HITECH_LIB) zc3 -O -CPM -E$@ cref.c
 
 install: cref3
 	install -d $(DESTDIR)$(BINDIR)

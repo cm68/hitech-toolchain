@@ -31,15 +31,13 @@ x.optim: $(NATSRC)
 optim3:	$(NATSRC)
 	gcc -O2 $(LEGACY) -ooptim3 $(NATSRC)
 
-optim.com: $(OBJS)
-	$(file >$@.in,-Z -Doptim.sym -N -C -Moptim.map -Ptext=0,data,bss -C100H -OP:$@ crtcpm.obj \)
-	$(foreach O,$(OBJS),$(file >>$@.in,P:$O \))
-	$(file >>$@.in,LIBC.LIB LIBF.LIB)
-	zxcc linq <$@.in
-	$(RM) $@.in
-
 PREFIX ?= /usr/local
 BINDIR  = $(PREFIX)/bin
+
+HITECH_LIB ?= /vault/src/hitech/lib
+stage1: optim.com
+optim.com: optim.c
+	LIBDIR80=$(HITECH_LIB) INCDIR80=$(HITECH_LIB) zc3 -O -CPM -E$@ optim.c
 
 install: optim3
 	install -d $(DESTDIR)$(BINDIR)

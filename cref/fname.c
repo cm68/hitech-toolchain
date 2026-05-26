@@ -31,24 +31,19 @@
  *
  */
 
-#ifdef _WIN32
-#define DIRSEP "/\\:"
-#else
-#define DIRSEP "/"
-#endif
-
-#include <string.h>
-
-#ifdef CPM
-char *fname(char *name) {
-    char *s;
-    return (s = strchr(name, ':')) ? s + 1 : name;
-}
-#else
+/*
+ * Return a pointer past any drive letter / path prefix in `name`.
+ * Recognises /, \, and : as separators, so works across CP/M
+ * (drive:file), POSIX (/path/file), and DOS/Win32 (drive:\path/file)
+ * without any #ifdefs. Avoids strpbrk which HI-TECH C v3.09's libc
+ * does not ship despite the prototype in <string.h>.
+ */
 char *fname(char *name) {
     char *t;
-    while ((t = strpbrk(name, DIRSEP)))
-        name = t + 1;
-    return name;
+    char *end = name;
+
+    for (t = name; *t; t++)
+        if (*t == '/' || *t == '\\' || *t == ':')
+            end = t + 1;
+    return end;
 }
-#endif

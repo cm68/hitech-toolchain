@@ -1,0 +1,11 @@
+# Everything in this directory except the build scripts is generated
+# by unpack.pl from ../cgen.c / ../cgen.h.
+*.c
+*.h
+*.as
+*.obj
+*.com
+*.map
+*.sym
+*.sym.sorted
+*.in

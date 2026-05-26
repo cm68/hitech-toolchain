@@ -21,6 +21,11 @@ libr3:	libr3.c
 PREFIX ?= /usr/local
 BINDIR  = $(PREFIX)/bin
 
+HITECH_LIB ?= /vault/src/hitech/lib
+stage1: libr.com
+libr.com: libr3.c
+	LIBDIR80=$(HITECH_LIB) INCDIR80=$(HITECH_LIB) zc3 -O -CPM -E$@ libr3.c
+
 install: libr3
 	install -d $(DESTDIR)$(BINDIR)
 	install -m 755 libr3 $(DESTDIR)$(BINDIR)/libr3

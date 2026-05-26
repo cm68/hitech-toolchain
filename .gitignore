@@ -14,3 +14,5 @@ cc-??????.[123]
 # host editor / OS artifacts
 *.swp
 .DS_Store
+core
+core.*

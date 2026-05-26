@@ -24,13 +24,6 @@ all:	$(TARGETS)
 %.obj: %.c
 	zxc -c -o  $<
 
-cpp.com: $(OBJS)
-	$(file >$@.in,-Z -Dcpp.sym -N -C -Mcpp.map -Ptext=0,data,bss -C100H -OP:$@ crtcpm.obj \)
-	$(foreach O,$(OBJS),$(file >>$@.in,P:$O \))
-	$(file >>$@.in,LIBC.LIB LIBF.LIB)
-	zxcc linq <$@.in
-	$(RM) $@.in
-
 LEGACY = -fcommon -Wno-error=implicit-function-declaration \
          -Wno-error=implicit-int -Wno-error=int-conversion \
          -Wno-error=incompatible-pointer-types
@@ -46,6 +39,13 @@ cpp:	$(OFILES)
 
 PREFIX ?= /usr/local
 BINDIR  = $(PREFIX)/bin
+
+# stage 1: build CP/M cpp.com. getargs.c is the Linux-host wildcard
+# expander; the CP/M build gets _getargs from libc.lib instead.
+HITECH_LIB ?= /vault/src/hitech/lib
+stage1: cpp.com
+cpp.com: cpp.c cpy.c fname.c
+	LIBDIR80=$(HITECH_LIB) INCDIR80=$(HITECH_LIB) zc3 -O -CPM -E$@ cpp.c cpy.c fname.c
 
 install: cpp_new3
 	install -d $(DESTDIR)$(BINDIR)

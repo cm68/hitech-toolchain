@@ -21,6 +21,13 @@ cgen3:	cgen.c cgen.h
 PREFIX ?= /usr/local
 BINDIR  = $(PREFIX)/bin
 
+# stage 1: split-source build of CP/M cgen.com (see native/GNUmakefile).
+# The single-file zc3 build hits 16-bit jump-displacement overflow.
+HITECH_LIB ?= /vault/src/hitech/lib
+stage1:
+	cd native && ./unpack.pl && $(MAKE) stage1 HITECH_LIB=$(HITECH_LIB)
+	cp native/cgen.com cgen.com
+
 install: cgen3
 	install -d $(DESTDIR)$(BINDIR)
 	install -m 755 cgen3 $(DESTDIR)$(BINDIR)/cgen3

@@ -21,6 +21,11 @@ dump3:	dump3.c
 PREFIX ?= /usr/local
 BINDIR  = $(PREFIX)/bin
 
+HITECH_LIB ?= /vault/src/hitech/lib
+stage1: dump.com
+dump.com: dump3.c
+	LIBDIR80=$(HITECH_LIB) INCDIR80=$(HITECH_LIB) zc3 -O -CPM -E$@ dump3.c
+
 install: dump3
 	install -d $(DESTDIR)$(BINDIR)
 	install -m 755 dump3 $(DESTDIR)$(BINDIR)/dump3

@@ -69,14 +69,6 @@ x.link:	$(NATSRC) $(INCLUDE)
 linq3:	$(NATSRC) $(INCLUDE)
 	gcc -O2 $(LEGACY) -olinq3 $(NATSRC)
 
-$(TARGET): $(OBJ)
-	$(file >$@.in,$(LFLAGS) -D$(@:.com=.sym) -M$(@:.com=.map) -OP:$@ crtcpm.obj \)
-	$(foreach O,$(OBJ),$(file >>$@.in,P:$O \))
-	$(file >>$@.in,LIBC.LIB)
-	$(LD) <$@.in
-	$(RM) $@.in
-	$(TYPE) $(@:.com=.sym) | $(SORTUNIQ) > $(@:.com=.sym.sorted)
-
 # build rules
 # for more than one include file the rules here may be sub-optimal
 
@@ -100,6 +92,12 @@ $(TARGET): $(OBJ)
 
 PREFIX ?= /usr/local
 BINDIR  = $(PREFIX)/bin
+
+# stage 1: build CP/M link.com. extra.c (LIBDIR80 search) is Linux-only.
+HITECH_LIB ?= /vault/src/hitech/lib
+stage1: link.com
+link.com: $(SRC)
+	LIBDIR80=$(HITECH_LIB) INCDIR80=$(HITECH_LIB) zc3 -O -CPM -E$@ $(SRC)
 
 install: linq3
 	install -d $(DESTDIR)$(BINDIR)

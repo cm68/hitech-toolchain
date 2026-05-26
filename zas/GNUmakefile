@@ -38,18 +38,17 @@ x.zas:	$(CSRCS) $(HDRS)
 zasx3:	$(CSRCS) $(HDRS)
 	cc $(CFLAGS) $(LEGACY) -O -o zasx3 $(CSRCS)
 
-zas.com: $(OBJS)
-	$(file >$@.in,-Z -Dzas.xym -N -C -Mzas.map -Ptext=0,data,bss -C100H -OP:$@ crtcpm.obj \)
-	$(foreach O,$(OBJS),$(file >>$@.in,P:$O \))
-	$(file >>$@.in,LIBC.LIB LIBF.LIB)
-	zxcc linq <$@.in
-	$(RM) $@.in
-
 $(OBJS) : $(HDRS)
 $(OFILES) : $(HDRS)
 
 PREFIX ?= /usr/local
 BINDIR  = $(PREFIX)/bin
+
+# stage 1: build CP/M zas.com. -LF pulls in libf.lib for atof().
+HITECH_LIB ?= /vault/src/hitech/lib
+stage1: zas.com
+zas.com: $(CSRCS) $(HDRS)
+	LIBDIR80=$(HITECH_LIB) INCDIR80=$(HITECH_LIB) zc3 -O -CPM -LF -E$@ $(CSRCS)
 
 install: zasx3
 	install -d $(DESTDIR)$(BINDIR)

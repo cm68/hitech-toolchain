@@ -29,6 +29,13 @@ extern uchar _setup;
 #define	EOF		(-1)
 #define	STDSETUP()
 
+/* fseek() whence values. HI-TECH C v3.09 predates the C89
+   SEEK_SET/SEEK_CUR/SEEK_END names but accepts the underlying
+   integer values directly. */
+#define	SEEK_SET	0
+#define	SEEK_CUR	1
+#define	SEEK_END	2
+
 #define	stdin		(&_iob[0])
 #define	stdout		(&_iob[1])
 #define	stderr		(&_iob[2])

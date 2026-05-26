@@ -42,17 +42,17 @@ p1x3:	$(NATSRCS) $(HDRS)
 p1:	$(CSRCS)
 	x.cc -o p1 $(CSRCS)
 
-p1.com: $(OBJS) 
-	$(file >$@.in,-Z -Dp1.sym -N -C -Mp1.map -Ptext=0,data,bss -C100H -OP:$@ crtcpm.obj \)
-	$(foreach O,$(OBJS),$(file >>$@.in,P:$O \))
-	$(file >>$@.in,LIBC.LIB LIBF.LIB)
-	zxcc linq <$@.in
-	$(RM) $@.in
-
 $(OBJS) : $(HDRS)
 
 PREFIX ?= /usr/local
 BINDIR  = $(PREFIX)/bin
+
+# stage 1: build CP/M p1.com. memchk.c is Linux/Windows-host only
+# (uses gcc's etext/end), so the stage-1 build omits it.
+HITECH_LIB ?= /vault/src/hitech/lib
+stage1: p1.com
+p1.com: $(CSRCS) $(HDRS)
+	LIBDIR80=$(HITECH_LIB) INCDIR80=$(HITECH_LIB) zc3 -O -CPM -E$@ $(CSRCS)
 
 install: p1x3
 	install -d $(DESTDIR)$(BINDIR)

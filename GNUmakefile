@@ -43,6 +43,23 @@ install: all
 # End-to-end test: assemble a hello.com via zasx3+linq3, run it under
 # a CP/M emulator (CPM_EMU env, defaults to `cpm`), check output.
 # Requires the toolchain to be installed (so zasx3/linq3 are on PATH).
-.PHONY: all clean clobber install test
+.PHONY: all clean clobber install test stage1
 test:
 	@cd test && $(MAKE) test CPM_EMU="$(CPM_EMU)"
+
+# stage 1: use the installed Linux-native toolchain (PREFIX/bin) to
+# cross-compile each pass's source to a CP/M .com. cgen uses a
+# split-source build (see cgen/native/) because the merged cgen.c
+# overflows 16-bit jump displacements. Each pass dir's GNUmakefile
+# owns the per-pass source list and any pass-specific flags.
+STAGE1_DIRS = cref libr objdump optim cpp p1 zas link cgen
+stage1:
+	@for i in $(STAGE1_DIRS); do \
+		echo "==> stage1 $$i"; \
+		( cd $$i && $(MAKE) stage1 ) || exit $$?; \
+	done
+	@echo "stage1 binaries:"; \
+	for i in $(STAGE1_DIRS); do \
+		f=$$(ls $$i/*.com 2>/dev/null | head -1); \
+		[ -n "$$f" ] && printf "  %-24s %6d bytes\n" "$$f" "$$(stat -c%s $$f)"; \
+	done

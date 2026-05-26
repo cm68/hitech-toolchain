@@ -463,22 +463,22 @@ def main():
 
     def record(name: str, ours_size: int, orig_start: int, ours_addr: int,
                method: str):
-        orig_end_addr = function_extent_from_ref(
-            orig_blob, orig_start + 0, orig_cret)[1]
-        # Re-do extent from a known-internal ref - use first anchor ref
-        # if we have it; else assume orig_start is the function start
-        # and forward-walk for end.
-        # Walker already keys off the ref site inside the func; reuse
-        # locate logic by treating orig_start itself as the start and
-        # forward-walking for the end.
-        forward_end = len(orig_blob)
-        for k in range(orig_start - 0x100, len(orig_blob)):
-            sz = is_function_exit(orig_blob, k, orig_cret)
-            if sz is not None:
-                forward_end = k + sz
-                break
-        orig_end_addr = cpm_load_addr(forward_end)
-        orig_size = orig_end_addr - orig_start
+        if method == 'fp':
+            # Fingerprint match means the bodies are byte-equal modulo
+            # imm16 operands. The size IS ours_size by construction.
+            orig_size = ours_size
+        else:
+            # Walk forward from orig_start until first function-exit.
+            # NB: a function with an early return (e.g. a guard `if(x)
+            # return y;` compiled as JP cret) will be undersized here.
+            # The 2x sanity check below catches the worst cases.
+            forward_end = len(orig_blob)
+            for k in range(orig_start - 0x100, len(orig_blob)):
+                sz = is_function_exit(orig_blob, k, orig_cret)
+                if sz is not None:
+                    forward_end = k + sz
+                    break
+            orig_size = cpm_load_addr(forward_end) - orig_start
         if orig_size > 2 * ours_size or ours_size > 2 * orig_size:
             results[name] = (ours_size, None, orig_start, f'walker-unsure[{method}]')
         else:
@@ -543,6 +543,31 @@ def main():
                 progress += 1
         if not progress:
             break
+
+    # ---- size refinement: fence the orig end with the next anchored
+    # function's orig address. Critical for functions with early
+    # returns where the walker stops at the first `JP cret`. If F and
+    # G are adjacent symbols in ours and both anchored, then
+    # G_orig - F_orig is F's true orig size (modulo padding between).
+    sorted_syms = sorted(syms, key=lambda s: s.addr)
+    name_to_idx = {s.name: i for i, s in enumerate(sorted_syms)}
+    for name, (ours_size, orig_size, orig_st, method) in list(results.items()):
+        if orig_st <= 0 or orig_size is None:
+            continue
+        idx = name_to_idx.get(name)
+        if idx is None or idx + 1 >= len(sorted_syms):
+            continue
+        next_sym = sorted_syms[idx + 1]
+        nxt = results.get(next_sym.name)
+        if not nxt or nxt[2] <= 0:
+            continue
+        fenced = nxt[2] - orig_st
+        if fenced <= 0 or fenced > 3 * ours_size:
+            continue
+        # If walker's number is suspiciously small (< 60% of ours),
+        # prefer the fence estimate.
+        if orig_size < 0.6 * ours_size and fenced > orig_size:
+            results[name] = (ours_size, fenced, orig_st, method + '+fence')
 
     # ---- emit report --------------------------------------------
     print(f"{'function':<28} {'ours':>6} {'orig':>6} {'delta':>9} {'note'}")
